@@ -21,6 +21,23 @@ my $anvil = Anvil::Tools->new();
 
 $anvil->Log->level({ set => 2 });
 
+sub migrate_server_to_host
+{
+	my $parameters       = shift;
+	my $server_uuid      = $parameters->{server_uuid};
+	my $target_host_uuid = $parameters->{target_host_uuid};
+
+	$anvil->Database->insert_or_update_jobs({
+		job_command     => $anvil->data->{path}{exe}{'anvil-migrate-server'}." --target ".$target_host_uuid,
+		job_data        => "server-uuid=".$server_uuid,
+		job_host_uuid   => $host_uuid,
+		job_description => "job_0293,!!server!".$server_uuid."!!,!!target!".$target_host_uuid."!!",
+		job_name        => "cgi-bin::migrate_server",
+		job_progress    => 0,
+		job_title       => "job_0399"
+	});
+}
+
 $anvil->Get->switches;
 
 $anvil->Database->connect;
@@ -74,6 +91,14 @@ if (not $is_decode_json_success)
 		key       => "error_0304",
 		variables => { request_body_string => $anvil->data->{cgi}{PUTDATA}{value}, json_decode_error => $_ }
 	});
+}
+
+my $server_uuid      = exists $request_body->{server_uuid}      ? $request_body->{server_uuid}      : $anvil->data->{switches}{'server-uuid'};
+my $target_host_uuid = exists $request_body->{target_host_uuid} ? $request_body->{target_host_uuid} : $anvil->data->{switches}{'target-host-uuid'};
+
+if ($server_uuid and $target_host_uuid)
+{
+	migrate_server_to_host({ server_uuid => $server_uuid, target_host_uuid => $target_host_uuid });
 }
 
 print JSON->new->utf8->encode($response_body)."\n";
