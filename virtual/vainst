@@ -1,0 +1,147 @@
+#!/bin/bash
+#
+# This is a convenience script that outputs some of the files and commands
+# required to setup a virtual anvil system.
+#
+
+set -e
+
+# Read configs
+source vaconf
+
+log 3 "ALLHOSTS=[$ALLHOSTS]"
+
+#
+# Generate network XMLs for virsh to consume
+#
+
+bcn2nd=201
+ifn3rd=122
+macthird=0
+
+for net in $ALLNETS; do
+ log 3 "net=[$net]"
+ vnet="${net}_bridge1"
+ vnetuuid=$(uuidgen)
+ vnetxml=$(cat << EOF
+<network>
+ <name>$vnet</name>
+ <uuid>$uuid</uuid>
+ <bridge name='$vnet' stp='on' delay='0'/>
+ <domain name='$vnet'/>
+ <mac address='52:54:$macthird:e1:ac:a2'/>
+EOF
+)
+
+ netnum=${net##*[[:alpha:]]}
+ log 3 "netnum=[$netnum]"
+ case "$net" in
+  ifn*)
+   ifnoct3=$((ifn3rd + netnum - 1))
+   vnetxml=$(cat << EOF
+$vnetxml
+ <forward mode='nat'/>
+ <ip address='192.168.$ifnoct3.1' netmask='255.255.255.0'>
+  <dhcp>
+   <range start='192.168.$ifnoct3.128' end='192.168.$ifnoct3.254'/>
+  </dhcp>
+ </ip>
+EOF
+)
+  ;;
+  bcn*)
+   bcnoct2=$((bcn2nd + netnum - 1))
+   i=1
+   for s in $STRIKERS; do
+    vnetxml=$(cat << EOF
+$vnetxml
+ <ip address='10.$bcnoct2.4.$i' netmask='255.255.0.0'/>
+EOF
+)
+    i=$((i + 1))
+   done
+  ;;
+ esac
+
+ cat << EOF
+$vnetxml
+</network>
+EOF
+
+ macthird=$((macthird + 1))
+done
+
+#
+# Build:
+# - commands to generate disks for the hosts
+# - commands to install the VMs
+#
+
+ipmiport=$IPMIPORTBASE
+monport=$MONPORTBASE
+storageport=$STORAGEPORTBASE
+for host in $ALLHOSTS; do
+ log 3 "host=[$host]"
+ case "$host" in
+  *striker*)
+   disksize="$STRIKERDISKSIZE"
+   mem=$STRIKERMEM
+   nets="$STRIKERNETS"
+   vcpus=$STRIKERCPU
+
+   qemucommands=()
+  ;;
+  *a??n??*)
+   disksize="$SUBNODEDISKSIZE"
+   mem=$SUBNODEMEM
+   nets="$SUBNODENETS"
+   vcpus=$SUBNODECPU
+
+   qemucommands=(
+    "-chardev socket,id=ipmi0,host=localhost,port=$ipmiport,reconnect=2"
+    "-device ipmi-bmc-extern,id=bmc0,chardev=ipmi0"
+    "-device isa-ipmi-bt,bmc=bmc0"
+    "-serial mon:tcp::$monport,server,telnet,nowait"
+    "-chardev socket,id=simengine-storage-tcp,host=localhost,port=$storageport,reconnect=2"
+    "-device virtio-serial,bus=pcie.0,addr=11"
+    "-device virtserialport,chardev=simengine-storage-tcp,name=systems.cdot.simengine.storage.net"
+   )
+   ipmiport=$((ipmiport + 1))
+   monport=$((monport + 1))
+   storageport=$((storageport + 1))
+   log 3 "${qemucommands[*]}"
+  ;;
+ esac
+
+ diskdir="$KVMDISKDIR/$host"
+ diskpath="$diskdir/$host-vol0.$KVMDISKFMT"
+ cat << EOF
+[ -d "$diskdir" ] || mkdir -p "$diskdir"
+[ -s "$diskpath" ] || qemu-img create -f $KVMDISKFMT "$diskpath" "$disksize"
+EOF
+
+ log 3 "nets=[$nets]"
+ hostnetconf=""
+ for net in $nets; do
+  netconf="--network network:${net}_bridge1,model=$NETMODEL"
+  log 3 "netconf=[$netconf]"
+  hostnetconf+="$netconf $netconf "
+ done
+ log 3 "hostnetconf=[$hostnetconf]"
+ cat << EOF
+virt-install \
+ --boot hd,menu=on \
+ --disk path="$KVMINSTIMG,device=cdrom" \
+ --disk path="$diskpath",device=disk\
+ --graphics vnc \
+ --memory $mem \
+ --name $host \
+ $hostnetconf \
+ --noautoconsole \
+ --os-variant $KVMVAR \
+ --qemu-commandline="${qemucommands[*]}" \
+ --vcpus $vcpus \
+ --virt-type kvm
+EOF
+done
+

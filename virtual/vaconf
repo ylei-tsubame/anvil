@@ -1,0 +1,37 @@
+# env
+
+err() {
+ printf "error: %s\n" "$1" >& 2
+}
+
+log() {
+ printf "debug%d: %s\n" "$1" "$2"
+}
+
+KVMINSTIMG="/mnt/shared/files/AlmaLinux-9.3-x86_64-minimal.iso"
+KVMDISKDIR="/mnt/yan-anvil-31"
+# See 'qemu-img --help' for all formats
+KVMDISKFMT="raw"
+KVMVAR="rhel9-unknown"
+
+IPMIPORTBASE=20100
+MONPORTBASE=20200
+STORAGEPORTBASE=20300
+
+NETMODEL="e1000"
+
+STRIKERS="yan-striker01 yan-striker02"
+STRIKERCPU=2
+STRIKERDISKSIZE="60GiB"
+STRIKERMEM=8192
+STRIKERNETS="ifn1 bcn1"
+
+SUBNODES="yan-a31n01 yan-a31n02"
+SUBNODECPU=8
+SUBNODEDISKSIZE="185GiB"
+SUBNODEMEM=16384
+SUBNODENETS="$STRIKERNETS sn1 mn1"
+
+ALLHOSTS="$STRIKERS $SUBNODES"
+ALLNETS="$SUBNODENETS"
+
