@@ -22,9 +22,10 @@ macthird=0
 for net in $ALLNETS; do
  log 3 "net=[$net]"
  vnet="${net}_bridge1"
+ vnetfilename="$vnet.xml"
  vnetuuid=$(uuidgen)
  vnetxml=$(cat << EOF
-cat << END > $vnet.xml
+cat << END > $vnetfilename
 <network>
  <name>$vnet</name>
  <uuid>$vnetuuid</uuid>
@@ -68,6 +69,8 @@ EOF
 $vnetxml
 </network>
 END
+virsh net-define "$vnetfilename" && virsh net-autostart "$vnet" && virsh net-start "$vnet"
+virsh net-destroy "$vnet" && virsh net-undefine "$vnet"
 EOF
 
  macthird=$((macthird + 1))
