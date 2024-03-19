@@ -29,6 +29,10 @@ cat << END > $vnetfilename
 <network>
  <name>$vnet</name>
  <uuid>$vnetuuid</uuid>
+ <!-- Replace the remaining lines with this block to make existing bridge known to libvirt.
+ <forward mode='bridge'/>
+ <bridge name='$vnet'/>
+ -->
  <bridge name='$vnet' stp='on' delay='0'/>
  <domain name='$vnet'/>
  <mac address='52:54:$macthird:e1:ac:a2'/>
