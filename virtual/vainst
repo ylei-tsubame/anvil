@@ -139,7 +139,7 @@ EOF
  log 3 "hostnetconf=[$hostnetconf]"
  cat << EOF
 virt-install \
- --boot hd,menu=on \
+ --boot cdrom,hd,menu=on \
  --disk path="$KVMINSTIMG,device=cdrom" \
  --disk path="$diskpath",device=disk\
  --graphics vnc \
