@@ -15,6 +15,24 @@ log 3 "ALLHOSTS=[$ALLHOSTS]"
 # Generate network XMLs for virsh to consume
 #
 
+nestedconf="/etc/modprobe.d/nested_virt.conf"
+nestedscript="enablenestedvirt"
+cat << EOF
+cat << END > "$nestedscript"
+#!/bin/bash
+if [ ! -f "$nestedconf" ]; then
+ systemctl stop libvirtd
+ rmmod kvm-intel
+ echo 'options kvm-intel nested=y' > "$nestedconf"
+ modprobe kvm-intel
+fi
+cat /sys/module/kvm_intel/parameters/nested
+END
+chmod +x "$nestedscript"
+systemctl start libvirtd
+systemctl enable libvirtd
+EOF
+
 bcn2nd=201
 ifn3rd=122
 macthird=0
