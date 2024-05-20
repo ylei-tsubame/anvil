@@ -1,0 +1,31 @@
+#!/bin/bash
+
+set -e
+
+AUTHPATH=".ssh/authorized_keys"
+KNOWNHOSTS="$HOME/.ssh/known_hosts"
+LOCALPORTS="22001 22002 22101 22102"
+PUBPATH="$HOME/.ssh/id_ed25519.pub"
+STRIKERS="an-striker01 an-striker02"
+SUBNODES="an-a01n01 an-a01n02"
+HOSTS="$SUBNODES $STRIKERS"
+
+[ -s "$PUBPATH" ] || exit 1
+[ -z "$CIBM" ] && CIBM="$1"
+
+PUB=$(<$PUBPATH)
+
+echo "$PUB"
+
+ssh "$CIBM" "for host in $HOSTS; do echo \$host; ssh \$host \"grep --quiet '$PUB' '$AUTHPATH' && echo 'already added' || echo '$PUB' >> '$AUTHPATH'\"; done"
+
+# Clear old virtual hosts
+echo "removing from known hosts"
+sed --in-place --regexp-extended '/^\[localhost\]:22/d' "$KNOWNHOSTS"
+
+# Scan hosts from localhost ports
+for localport in $LOCALPORTS; do
+    echo "scanning localhost:$localport"
+    ssh-keyscan -H -p $localport localhost >> "$KNOWNHOSTS"
+done
+
