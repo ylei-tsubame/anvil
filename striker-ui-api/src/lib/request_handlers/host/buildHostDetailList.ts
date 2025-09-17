@@ -262,34 +262,61 @@ export const buildHostDetailList = async (
     WHERE a.network_interface_host_uuid IN (${hostUuidsCsv})
     ORDER BY b.network_interface_alias;`;
 
+  const sqlGetSaved = `
+    SELECT
+      a.*,
+      b.network_interface_uuid
+    FROM (
+      SELECT
+        job_host_uuid,
+        split_part(entry, '=', 1) AS key,
+        split_part(entry, '=', 2) AS value
+      FROM (
+        SELECT
+          job_host_uuid,
+          unnest(
+            string_to_array( job_data, chr(10) )
+          ) AS entry
+        FROM (
+          SELECT *
+          FROM jobs
+          WHERE
+              job_command LIKE '%anvil-configure-host%'
+            AND
+              job_host_uuid IN (${hostUuidsCsv})
+          ORDER BY modified_date DESC
+          LIMIT 1
+        ) AS scope
+      ) AS entries
+      WHERE entry LIKE '%=%'
+    ) AS a
+    LEFT JOIN (${sqlNetworkInterfaces()}) AS b
+      ON b.network_interface_mac_address = a.value
+    WHERE a.key NOT LIKE ANY (
+          ARRAY[
+            '%host_name%'
+          ]
+        )
+    ORDER BY a.key;`;
+
   const sqlGetVariables = `
     SELECT
       a.variable_source_uuid,
       a.variable_name,
       a.variable_value,
-      b.network_interface_uuid
+      NULL AS placeholder
     FROM (${sqlVariables()}) AS a
-    LEFT JOIN (${sqlNetworkInterfaces()}) AS b
-      ON b.network_interface_mac_address = a.variable_value
     WHERE
         a.variable_source_uuid IN (${hostUuidsCsv})
       AND
         a.variable_name LIKE ANY (
           ARRAY[
-            'form::config_step%',
             'install-target::enabled',
             'network::ntp::servers',
             'system::configured'
           ]
         )
-      AND
-        a.variable_name NOT LIKE ANY (
-          ARRAY[
-            '%host_name%'
-          ]
-        )
-    ORDER BY
-      a.variable_name;`;
+    ORDER BY a.variable_name;`;
 
   const sqlGetDrbdResources = `
     SELECT
@@ -366,6 +393,7 @@ export const buildHostDetailList = async (
   try {
     results = await queries(
       sqlGetIfaces,
+      sqlGetSaved,
       sqlGetVariables,
       sqlGetDrbdResources,
       sqlGetDrbdSummary,
@@ -380,6 +408,7 @@ export const buildHostDetailList = async (
 
   const [
     ifaceRows,
+    savedRows,
     variableRows,
     drbdResourceRows,
     drbdSummaryRows,
@@ -445,7 +474,7 @@ export const buildHostDetailList = async (
 
   poutvar(hosts, 'After getting network interfaces; hosts=');
 
-  variableRows.forEach((row) => {
+  [...savedRows, ...variableRows].forEach((row) => {
     const [hostUuid = '', name, original, ifaceUuid] = row as string[];
 
     const { [hostUuid]: host } = hosts;
