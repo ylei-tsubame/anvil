@@ -4,7 +4,6 @@ import { SERVER_PATHS } from '../../consts';
 
 import { getLocalHostUUID, job } from '../../accessModule';
 import { buildJobDataFromObject } from '../../buildJobData';
-import { deleteConfigVariables } from './deleteConfigVariables';
 import { buildNetworkConfig } from '../../fconfig';
 import { Responder } from '../../Responder';
 import { configStrikerRequestBodySchema } from './schemas';
@@ -42,6 +41,11 @@ export const configStriker: RequestHandler<
   } = body;
 
   const configData: FormConfigData = {
+    // NTP is the only field read directly by the config perl script.
+    'network::ntp::servers': { step: 2, value: ntp },
+  };
+
+  const jobData: FormConfigData = {
     [cvar(1, 'domain')]: { value: domainName },
     [cvar(1, 'organization')]: { value: organizationName },
     [cvar(1, 'prefix')]: { value: organizationPrefix },
@@ -53,25 +57,27 @@ export const configStriker: RequestHandler<
     [cvar(2, 'striker_password')]: { step: 2, value: adminPassword },
     [cvar(2, 'striker_user')]: { step: 2, value: 'admin' },
     ...buildNetworkConfig(networks),
-    // NTP is the only field read directly by the config perl script.
-    'network::ntp::servers': { step: 2, value: ntp },
   };
 
-  poutvar(configData, `Config striker with data: `);
+  poutvar(
+    {
+      configData,
+      jobData,
+    },
+    `Config striker with data: `,
+  );
 
   let jobUuid: string;
 
   try {
     const localHostUuid = getLocalHostUUID();
 
-    await deleteConfigVariables(localHostUuid);
-
     await setConfigVariables(configData, localHostUuid);
 
     jobUuid = await job({
       file: __filename,
       job_command: SERVER_PATHS.usr.sbin['anvil-configure-host'].self,
-      job_data: buildJobDataFromObject(configData, {
+      job_data: buildJobDataFromObject(jobData, {
         getValue: ({ value }) => String(value),
       }),
       job_name: 'configure::network',

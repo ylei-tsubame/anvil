@@ -5,7 +5,6 @@ import { SERVER_PATHS } from '../../consts';
 
 import { job, query } from '../../accessModule';
 import { buildJobDataFromObject } from '../../buildJobData';
-import { deleteConfigVariables } from './deleteConfigVariables';
 import { buildNetworkConfig } from '../../fconfig';
 import { Responder } from '../../Responder';
 import {
@@ -74,25 +73,32 @@ export const prepareNetwork: RequestHandler<
   });
 
   const configData: FormConfigData = {
+    'network::ntp::servers': { step: 2, value: ntp },
+  };
+
+  const jobData: FormConfigData = {
     [cvar(2, 'dns')]: { step: 2, value: dns },
     [cvar(2, 'gateway')]: { step: 2, value: gateway },
     [cvar(2, 'gateway_interface')]: { step: 2, value: gatewayInterface },
     [cvar(2, 'host_name')]: { step: 2, value: hostName },
     ...buildNetworkConfig(networks),
-    'network::ntp::servers': { step: 2, value: ntp },
   };
 
-  poutvar(configData, `Prepare network on host ${hostUuid} with data: `);
+  poutvar(
+    {
+      configData,
+      jobData,
+    },
+    `Prepare network on host ${hostUuid} with data: `,
+  );
 
   try {
-    await deleteConfigVariables(hostUuid);
-
     await setConfigVariables(configData, hostUuid);
 
     await job({
       file: __filename,
       job_command: SERVER_PATHS.usr.sbin['anvil-configure-host'].self,
-      job_data: buildJobDataFromObject(configData, {
+      job_data: buildJobDataFromObject(jobData, {
         getValue: ({ value }) => String(value),
       }),
       job_host_uuid: hostUuid,
