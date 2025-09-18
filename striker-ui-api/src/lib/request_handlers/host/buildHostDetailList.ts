@@ -4,7 +4,6 @@ import { queries, query } from '../../accessModule';
 import { camel } from '../../camel';
 import { setChain } from '../../chain';
 import { getHostIpmi } from '../../disassembleCommand';
-import { getShortHostName } from '../../disassembleHostName';
 import join from '../../join';
 import { perr, poutvar } from '../../shell';
 import {
@@ -115,6 +114,7 @@ export const buildHostDetailList = async (
     SELECT
       a.host_uuid,
       a.host_name,
+      a.host_short_name,
       a.host_type,
       a.host_ipmi,
       a.host_status,
@@ -144,10 +144,14 @@ export const buildHostDetailList = async (
 
   const hosts: HostDetailList = {};
 
+  let hostNamesLikeCsv = '';
+  let hostUuidsCsv = '';
+
   hostRows.forEach((row) => {
     const [
       uuid,
       name,
+      short,
       type,
       ipmiCommand,
       status,
@@ -157,8 +161,10 @@ export const buildHostDetailList = async (
       anvilDescription,
     ] = row;
 
+    hostNamesLikeCsv += `'%${name}%', `;
+    hostUuidsCsv += `'${uuid}', `;
+
     const ipmi = getHostIpmi(ipmiCommand);
-    const short = getShortHostName(name);
 
     const host: HostDetail = {
       configured: false,
@@ -213,16 +219,19 @@ export const buildHostDetailList = async (
 
   poutvar(hosts, 'After getting hosts; hosts=');
 
-  const hostUuids = Object.keys(hosts);
-
-  if (!hostUuids.length) {
+  if (!hostUuidsCsv) {
     return hosts;
   }
 
-  const hostUuidsCsv = join(Object.keys(hosts), {
-    elementWrapper: "'",
-    separator: ', ',
-  });
+  hostNamesLikeCsv = hostNamesLikeCsv.replace(/,\s+$/, '');
+  hostUuidsCsv = hostUuidsCsv.replace(/,\s+$/, '');
+
+  const sqlListAllHosts = `
+    SELECT
+      host_name,
+      host_uuid
+    FROM hosts
+    ORDER BY modified_date ASC;`;
 
   const sqlGetIfaces = `
     SELECT
@@ -264,26 +273,37 @@ export const buildHostDetailList = async (
 
   const sqlGetSaved = `
     SELECT
-      a.*,
+      a.job_host_uuid,
+      a.host_name,
+      a.key,
+      a.value,
       b.network_interface_uuid
     FROM (
       SELECT
         job_host_uuid,
+        host_name,
         split_part(entry, '=', 1) AS key,
         split_part(entry, '=', 2) AS value
       FROM (
         SELECT
           job_host_uuid,
+          host_name,
           unnest(
             string_to_array( job_data, chr(10) )
           ) AS entry
         FROM (
-          SELECT *
+          SELECT
+            *,
+            SUBSTRING(job_data, 'host_name::value=([^\\n]+)') AS host_name
           FROM jobs
           WHERE
               job_command LIKE '%anvil-configure-host%'
             AND
-              job_host_uuid IN (${hostUuidsCsv})
+              job_data LIKE ANY (
+                ARRAY[
+                  ${hostNamesLikeCsv}
+                ]
+              )
           ORDER BY modified_date DESC
           LIMIT 1
         ) AS scope
@@ -302,9 +322,10 @@ export const buildHostDetailList = async (
   const sqlGetVariables = `
     SELECT
       a.variable_source_uuid,
+      NULL AS placeholder1,
       a.variable_name,
       a.variable_value,
-      NULL AS placeholder
+      NULL AS placeholder2
     FROM (${sqlVariables()}) AS a
     WHERE
         a.variable_source_uuid IN (${hostUuidsCsv})
@@ -392,6 +413,7 @@ export const buildHostDetailList = async (
 
   try {
     results = await queries(
+      sqlListAllHosts,
       sqlGetIfaces,
       sqlGetSaved,
       sqlGetVariables,
@@ -407,6 +429,7 @@ export const buildHostDetailList = async (
   }
 
   const [
+    allHostRows,
     ifaceRows,
     savedRows,
     variableRows,
@@ -415,6 +438,14 @@ export const buildHostDetailList = async (
     vgTotalRows,
     vgRows,
   ] = results;
+
+  const mapToLatestHostUuid: Record<string, string> = {};
+
+  allHostRows.forEach((row) => {
+    const [name, uuid] = row as string[];
+
+    mapToLatestHostUuid[name] = uuid;
+  });
 
   const counts: Record<string, number> = {};
 
@@ -475,15 +506,37 @@ export const buildHostDetailList = async (
   poutvar(hosts, 'After getting network interfaces; hosts=');
 
   [...savedRows, ...variableRows].forEach((row) => {
-    const [hostUuid = '', name, original, ifaceUuid] = row as string[];
+    const [hostUuid = '', hostName = '', key, original, ifaceUuid] =
+      row as string[];
 
-    const { [hostUuid]: host } = hosts;
+    /**
+     * The newest host_uuid (based on modified_date), or fallback to the
+     * host_uuid attached to the job or variable record.
+     *
+     * There are 4 possible scenarios involving the host_uuid and host_name:
+     *
+     * 1. `uuid` and `name` combined matches a record on the `hosts` table: this is usually either the host hasn't changed **or** it's being rebuilt without changing the motherboard. Simply load the saved values.
+     *
+     * 2. `name` exists in the `hosts` table, but `uuid` changed: this is usually rebuilding the host **with** changing the motherboard. All saved values would be attached to the previous `uuid`, thus we need to connect the saved values to the new `uuid`.
+     *
+     * 3. `uuid` exists in the `hosts` table, but `name` changed: dunno what this is, but we can just fallback to use the existing `uuid` because we won't find the new `name`.
+     *
+     * 4. `uuid` and `name` combined doesn't exist in the `hosts` table: this is usually a new host, we won't be able to find any saved values because there's no common identifier.
+     *
+     * The host UUID from the records could be outdated because we're looking at
+     * the most recent saved values, which would be from a deleted host in the
+     * replacement scenario. Hence, we need to find the latest host UUID based
+     * on the host name.
+     */
+    const currentHostUuid = mapToLatestHostUuid[hostName] ?? hostUuid;
 
-    if ([host, name].some((v) => !v)) {
+    const { [currentHostUuid]: host } = hosts;
+
+    if ([host, key].some((v) => !v)) {
       return;
     }
 
-    const [prefix, ...parts] = name.split('::');
+    const [prefix, ...parts] = key.split('::');
 
     const params = setvarParams[prefix]?.call(null, parts, original);
 
@@ -496,7 +549,7 @@ export const buildHostDetailList = async (
     setChain(chain, value, host);
 
     // Set the network interface UUID based on a previously used MAC
-    if (!/mac_to_set/.test(name)) {
+    if (!/mac_to_set/.test(key)) {
       return;
     }
 
@@ -512,7 +565,7 @@ export const buildHostDetailList = async (
 
     setChain(chain, ifaceUuid, host);
 
-    const matches = name.match(regexps.network.id);
+    const matches = key.match(regexps.network.id);
 
     if (!matches) {
       return;
