@@ -1,0 +1,11 @@
+[Unit]
+Description=Configures auditd to watch /root/.ssh/authorized_keys
+
+[Service]
+Type=exec
+ExecStart=/usr/sbin/auditctl -a always,exit -F arch=b64 -F path=/root/.ssh/authorized_keys -F perm=wa
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

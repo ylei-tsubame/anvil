@@ -14,9 +14,11 @@ policy_module(anvil-subnode, 1.1.0)
 # Use existing types; don't declare unless it's new.
 #
 require {
+	type init_t;
 	type mnt_t;
-	type sysctl_vm_t;
+	type ssh_home_t;
 	type svirt_t;
+	type sysctl_vm_t;
 	type virsh_t;
 	class file { getattr open read };
 }
@@ -24,6 +26,11 @@ require {
 
 #============= drbd_t ==============
 # drbd rules will be provided by drbd-utils package.
+
+
+#============= init_t ==============
+# allow systemd to monitor /root/.ssh/authorized_keys with path unit
+allow init_t ssh_home_t:file { read };
 
 
 #============= virsh_t ==============

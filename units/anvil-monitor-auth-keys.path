@@ -1,0 +1,9 @@
+[Unit]
+Description=Triggers a service to collect info on /root/.ssh/authorized_keys when it's modified
+
+[Path]
+PathModified=/root/.ssh/authorized_keys
+TriggerLimitBurst=0
+
+[Install]
+WantedBy=multi-user.target
