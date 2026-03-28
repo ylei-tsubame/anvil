@@ -1,5 +1,7 @@
 [Unit]
 Description=Configures auditd to watch /root/.ssh/authorized_keys
+Requires=auditd.service
+After=auditd.service
 
 [Service]
 Type=exec
