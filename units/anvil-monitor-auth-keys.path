@@ -1,5 +1,7 @@
 [Unit]
 Description=Triggers a service to collect info on /root/.ssh/authorized_keys when it's modified
+After=local-fs.target
+Before=sysinit.target
 
 [Path]
 PathModified=/root/.ssh/authorized_keys

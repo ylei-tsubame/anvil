@@ -2,7 +2,6 @@ MAINTAINERCLEANFILES	= Makefile.in
 
 servicedir		= $(SYSTEMD_UNIT_DIR)
 dist_service_DATA	= \
-			  anvil-audit-auth-keys.service \
 			  anvil-daemon.service \
 			  anvil-monitor-auth-keys.path \
 			  anvil-monitor-auth-keys.service \

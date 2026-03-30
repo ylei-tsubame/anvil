@@ -7,8 +7,8 @@ ExecStart=/usr/bin/stat /root/.ssh/authorized_keys
 ExecStart=/usr/bin/echo "----- START BODY -----"
 ExecStart=/usr/bin/cat /root/.ssh/authorized_keys
 ExecStart=/usr/bin/echo "----- END BODY -----"
-StandardOutput=journal
-StandardError=journal
+StandardOutput=file:/var/log/anvil.log
+StandardError=file:/var/log/anvil.log
 
 [Install]
 WantedBy=multi-user.target

@@ -293,6 +293,15 @@ if [ $1 -eq 1 ]
 then
     systemctl enable --now chronyd.service
     systemctl enable --now %coreservices
+
+    # write a permanent rule in audit.rules to monitor /root/.ssh/authorized_keys
+    if [ ! -e '/etc/audit/rules.d/anvil-monitor-auth-keys.rules' ]
+    then
+        echo "-a always,exit -F arch=b64 -F path=/root/.ssh/authorized_keys -F perm=wa" >/etc/audit/rules.d/anvil-monitor-auth-keys.rules
+        chmod 0600 /etc/audit/rules.d/anvil-monitor-auth-keys.rules
+        restorecon /etc/audit/rules.d/anvil-monitor-auth-keys.rules
+        augenrules --load
+    fi
 fi
 
 
@@ -394,6 +403,17 @@ touch /etc/anvil/type.dr
 %preun core
 # Only uninstall our services
 %systemd_preun %coreservices
+
+# on uninstall (not upgrade)...
+if [ $1 -eq 0 ]
+then
+    # remove the rule that monitors /root/.ssh/authorized_keys
+    if [ -e '/etc/audit/rules.d/anvil-monitor-auth-keys.rules' ]
+    then
+        rm -f /etc/audit/rules.d/anvil-monitor-auth-keys.rules
+        augenrules --load
+    fi
+fi
 
 
 ### Remove stuff - Disabled for now, messes things up during upgrades
