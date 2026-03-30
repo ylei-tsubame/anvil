@@ -10,7 +10,6 @@
 # 2 backslashes to make shell continue the line, and
 # 1 more backslash to make rpmbuild continue the line.
 %define coreservices  anvil-daemon.service \\\
-anvil-audit-auth-keys.service \\\
 anvil-monitor-auth-keys.path \\\
 anvil-monitor-network.service \\\
 scancore.service 
@@ -291,9 +290,6 @@ setenforce 0
 # enable and start required core services on fresh install
 if [ $1 -eq 1 ]
 then
-    systemctl enable --now chronyd.service
-    systemctl enable --now %coreservices
-
     # write a permanent rule in audit.rules to monitor /root/.ssh/authorized_keys
     if [ ! -e '/etc/audit/rules.d/anvil-monitor-auth-keys.rules' ]
     then
@@ -302,6 +298,9 @@ then
         restorecon /etc/audit/rules.d/anvil-monitor-auth-keys.rules
         augenrules --load
     fi
+
+    systemctl enable --now chronyd.service
+    systemctl enable --now %coreservices
 fi
 
 
